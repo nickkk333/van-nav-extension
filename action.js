@@ -7,6 +7,7 @@
  *  3. 修复原代码中 formDefault1 为空导致的“添加工具”崩溃
  *  4. 分类缓存改存 chrome.storage.local（规避 sync 8KB 单项上限）
  *  5. 首次使用自动引导进入设置页
+ *  6. 添加工具支持排序 sort（-1 添加到最后，0 或留空添加到最前）
  */
 'use strict';
 
@@ -41,6 +42,7 @@ const els = {
   formUrl: $('#url'),
   formLogo: $('#logo'),
   formDesc: $('#desc'),
+  formSort: $('#sort'),
   formHide1: $('#hide1'),
   formDefault1: $('#default1'),
 
@@ -77,6 +79,15 @@ const normalizeUrl = (raw) => {
 };
 
 const isWebUrl = (raw) => /^https?:\/\/.+/i.test(String(raw || ''));
+
+// 排序默认值：-1 表示添加到分类最后
+const DEFAULT_SORT = -1;
+
+// 解析排序输入：非法值或留空按 0 处理（0 表示添加到最前）
+const resolveSort = (raw) => {
+  const num = Number.parseInt(String(raw || '').trim(), 10);
+  return Number.isFinite(num) ? num : 0;
+};
 
 /* ============================ 存储封装 ============================ */
 function getSync(keys) {
@@ -266,6 +277,7 @@ function handleAddTool() {
   els.formDesc.value = tab.title || '';
   els.formUrl.value = tab.url || '';
   els.formLogo.value = tab.favIconUrl || '';
+  els.formSort.value = String(DEFAULT_SORT);
   els.formHide1.checked = false;
   els.formDefault1.checked = true;
 
@@ -280,6 +292,7 @@ async function handleConfirmAdd() {
     url: normalizeUrl(els.formUrl.value),
     desc: els.formDesc.value.trim(),
     logo: els.formLogo.value.trim(),
+    sort: resolveSort(els.formSort.value),
     hide: els.formHide1.checked,
     default: els.formDefault1.checked,
   };

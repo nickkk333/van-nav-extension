@@ -87,6 +87,10 @@
           <input id="desc" name="desc" type="text" placeholder="请输入描述" autocomplete="off" required />
         </label>
 
+        <label for="sort">排序<span class="optional">（-1 添加到最后，0 或留空添加到最前）</span>
+          <input id="sort" name="sort" type="number" step="1" value="-1" placeholder="-1" inputmode="numeric" autocomplete="off" />
+        </label>
+
         <label class="switch-row" for="hide1">
           <input id="hide1" name="hide" type="checkbox" role="switch" />
           设为隐藏
