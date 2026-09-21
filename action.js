@@ -1,289 +1,517 @@
-const addToolElement = document.querySelector("#addTool")
-const openAdminElement = document.querySelector("#openAdmin")
-const openWebSiteElement = document.querySelector("#openWebsite")
-const openSettingElement = document.querySelector("#openSetting")
-const openExtensionElement = document.querySelector("#openExtension")
-const confirmPage = document.querySelector("#confirmPage")
-const mainPage = document.querySelector("#mainPage")
-const settingPage = document.querySelector("#settingPage")
-const loadingPage = document.querySelector("#loadingPage")
-const confirmBtn = document.querySelector("#confirmAdd")
-const cancelBtn = document.querySelector("#cancelAdd")
-const settingConfirmBtn = document.querySelector("#confirmSetting")
-const settingCancelBtn = document.querySelector("#cancelSetting")
-const fetchCatelogBtn = document.querySelector("#fetchCatelog")
-const formName = document.querySelector("#name")
-const formUrl = document.querySelector("#url")
-const formDesc = document.querySelector("#desc")
-const formCatelog = document.querySelector("#catelog")
-const formLogo = document.querySelector("#logo")
-const formHide1 = document.querySelector("#hide1")
-const settingBaseUrl = document.querySelector("#baseUrl")
-const settingToken = document.querySelector("#token")
-openAdminElement.addEventListener("click", handleOpenAdmin)
-openWebSiteElement.addEventListener("click", handleOpenWebsite)
-confirmBtn.addEventListener("click", handleConfirm)
-cancelBtn.addEventListener("click", handleCancel)
-addToolElement.addEventListener("click", handleAddTool)
-openSettingElement.addEventListener("click", handleOpenSetting)
-openExtensionElement.addEventListener("click", handleOpenExtension)
-settingCancelBtn.addEventListener("click", handleOpenSetting)
-settingConfirmBtn.addEventListener("click", handleSettingConfirm)
-fetchCatelogBtn.addEventListener("click", (ev) => {
-  setLoading(true, settingPage);
-  fetchCateLog(undefined).then(res => {
-  }).finally(() => {
-    setLoading(false, settingPage)
-  })
-})
-let BASE_URL = '';
-let TOKEN = '';
-let SELECT_OPTIONS = null;
-let LAST_OPTION = null;
+﻿/*!
+ * VanNav 管理扩展 - action.js
+ *
+ * 重构要点：
+ *  1. 统一请求封装：超时 + HTTP 状态校验 + 错误透出
+ *  2. Toast 通知替代 alert，加载态防重复提交
+ *  3. 修复原代码中 formDefault1 为空导致的“添加工具”崩溃
+ *  4. 分类缓存改存 chrome.storage.local（规避 sync 8KB 单项上限）
+ *  5. 首次使用自动引导进入设置页
+ */
+'use strict';
 
-chrome.storage.sync.get(['baseUrl', 'token', 'options', 'lastOption'], function (result) {
-  if (!result.baseUrl || !result.token) {
-    alert("首次使用请先在设置中设置基础 URL 和 TOKEN!")
-    return
-  }
-  if (!result.options) {
-    // fetch
-    setLoading(true, mainPage)
-    fetchCateLog(undefined).then(res => {
-      if (!res?.length) {
-        alert("暂无分类信息，请先在后台添加分类！")
-      } else {
-        addCateLogInSelect();
-      }
-    }).catch(res => {
-      console.log(res)
-    }).finally(() => {
-      setLoading(false, mainPage)
-    })
-  } else {
-    SELECT_OPTIONS = result.options
-    addCateLogInSelect();
-  }
-  if (result.lastOption) {
-    LAST_OPTION = result.lastOption
-  }
-  BASE_URL = result.baseUrl || "";
-  TOKEN = result.token || "";
-});
+/* ============================ DOM 引用 ============================ */
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
-let data = null;
+const els = {
+  pages: $$('.page'),
+  mainPage: $('#mainPage'),
+  confirmPage: $('#confirmPage'),
+  settingPage: $('#settingPage'),
+  currentTabInfo: $('#currentTabInfo'),
 
-function addCateLogInSelect() {
-  const select = document.querySelector("#catelog")
-  //先删除所有的子元素
-  select.innerHTML = '';
-  SELECT_OPTIONS.forEach(i => {
-    const option = document.createElement("option")
-    option.value = i
-    option.text = i
-    select.appendChild(option)
-  })
+  addForm: $('#addForm'),
+  settingForm: $('#settingForm'),
+
+  btnRefresh: $('#refreshCatalog'),
+  btnAddTool: $('#addTool'),
+  btnOpenAdmin: $('#openAdmin'),
+  btnOpenWebsite: $('#openWebsite'),
+  btnOpenSetting: $('#openSetting'),
+  btnOpenWindow: $('#openWindow'),
+  btnCancelAdd: $('#cancelAdd'),
+  btnCancelSetting: $('#cancelSetting'),
+  btnTestConn: $('#testConn'),
+  btnFetchCatalog: $('#fetchCatelog'),
+  btnToggleToken: $('#toggleToken'),
+
+  formCatalog: $('#catelog'),
+  formName: $('#name'),
+  formUrl: $('#url'),
+  formLogo: $('#logo'),
+  formDesc: $('#desc'),
+  formHide1: $('#hide1'),
+  formDefault1: $('#default1'),
+
+  settingBaseUrl: $('#baseUrl'),
+  settingToken: $('#token'),
+
+  toast: $('#toast'),
+  toastContent: $('#toastContent'),
+};
+
+/* ============================ 状态 ============================ */
+const state = {
+  baseUrl: '',
+  token: '',
+  catalog: [],
+  lastCatalog: '',
+  currentTab: null,
+  fetching: false,
+};
+
+/* ============================ 通用工具 ============================ */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// HTML 转义，防止页面标题/URL 注入
+const escapeHtml = (str) =>
+  String(str).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// 为无协议的网址自动补全 https://
+const normalizeUrl = (raw) => {
+  const url = String(raw || '').trim();
+  if (!url) return '';
+  return /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) ? url : `https://${url}`;
+};
+
+const isWebUrl = (raw) => /^https?:\/\/.+/i.test(String(raw || ''));
+
+/* ============================ 存储封装 ============================ */
+function getSync(keys) {
+  return new Promise((resolve, reject) => {
+    chrome.storage.sync.get(keys, (res) => {
+      const err = chrome.runtime.lastError;
+      err ? reject(new Error(err.message)) : resolve(res || {});
+    });
+  });
 }
 
-async function fetchCateLog(ev) {
+function setSync(values) {
+  return new Promise((resolve, reject) => {
+    chrome.storage.sync.set(values, () => {
+      const err = chrome.runtime.lastError;
+      err ? reject(new Error(err.message)) : resolve();
+    });
+  });
+}
+
+function getLocal(keys) {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.get(keys, (res) => {
+      const err = chrome.runtime.lastError;
+      err ? reject(new Error(err.message)) : resolve(res || {});
+    });
+  });
+}
+
+function setLocal(values) {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.set(values, () => {
+      const err = chrome.runtime.lastError;
+      err ? reject(new Error(err.message)) : resolve();
+    });
+  });
+}
+
+/* ============================ 请求封装 ============================ */
+async function api(path, { method = 'GET', body } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+
   try {
-    const { data } = await getData(`${BASE_URL}/api/admin/all`)
-    const catelogs = data?.catelogs || []
-    if (catelogs.length) {
-      SELECT_OPTIONS = catelogs.map(i => i.name)
-      chrome.storage.sync.set({ options: SELECT_OPTIONS }, function () {
-      });
-      addCateLogInSelect();
-      return SELECT_OPTIONS;
+    const res = await fetch(state.baseUrl + path, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: state.token,
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    // 兼容返回体不是 JSON 的情况
+    const json = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      const msg = json && (json.msg || json.message);
+      throw new Error(msg || `请求失败（HTTP ${res.status}）`);
+    }
+    return json;
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error('请求超时，请检查网络或站点地址');
+    if (err.name === 'TypeError') throw new Error('网络错误，请检查站点地址或网络');
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/* ============================ Toast 通知 ============================ */
+let toastTimer = null;
+function showToast(message, type = 'info', duration = 2600) {
+  els.toast.className = `toast ${type} show`;
+  els.toastContent.textContent = message;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => els.toast.classList.remove('show'), duration);
+}
+
+/* ============================ 加载态 ============================ */
+function setLoading(on) {
+  document.body.classList.toggle('loading', !!on);
+  $$('button').forEach((btn) => {
+    btn.disabled = !!on;
+  });
+}
+
+/* ============================ 页面导航 ============================ */
+function showPage(page) {
+  els.pages.forEach((p) => p.classList.toggle('active', p === page));
+}
+
+/* ============================ 分类管理 ============================ */
+function renderCatalog() {
+  const select = els.formCatalog;
+  const current = select.value || state.lastCatalog || '';
+  select.innerHTML = '';
+
+  if (!state.catalog.length) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '暂无分类，请先获取';
+    select.appendChild(opt);
+    select.disabled = true;
+    return;
+  }
+
+  state.catalog.forEach((name) => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    select.appendChild(opt);
+  });
+
+  select.disabled = false;
+  if (state.catalog.includes(current)) {
+    select.value = current;
+  } else if (state.lastCatalog && state.catalog.includes(state.lastCatalog)) {
+    select.value = state.lastCatalog;
+  }
+}
+
+async function loadCatalog(force = false) {
+  if (state.fetching) return; // 防连点
+  if (!state.baseUrl || !state.token) {
+    showToast('请先完成设置', 'error');
+    setTimeout(handleOpenSetting, 600);
+    return;
+  }
+  if (!force && state.catalog.length) {
+    renderCatalog();
+    return;
+  }
+
+  state.fetching = true;
+  setLoading(true);
+  try {
+    const json = await api('/api/admin/all');
+    const catelogs = (json && json.data && json.data.catelogs) || [];
+    const names = catelogs.map((i) => i && i.name).filter(Boolean);
+
+    if (names.length) {
+      state.catalog = names;
+      await setLocal({ options: names });
+      renderCatalog();
+      showToast(`已获取 ${names.length} 个分类`, 'success', 1800);
     } else {
-      return [];
+      showToast('后台暂无分类数据', 'error');
     }
   } catch (err) {
-    return;
+    showToast(err.message || '获取分类失败', 'error', 4000);
+  } finally {
+    state.fetching = false;
+    setLoading(false);
   }
-
 }
 
-async function handleAddTool(ev) {
-  if (BASE_URL === "" || TOKEN === "") {
-    alert("请先在设置中设置基础 URL 和 TOKEN!")
+/* ============================ 页面动作 ============================ */
+function requireConfig() {
+  if (state.baseUrl && state.token) return true;
+  showToast('请先在设置中配置 baseUrl 与 Token', 'error');
+  setTimeout(handleOpenSetting, 600);
+  return false;
+}
+
+function handleAddTool() {
+  if (!requireConfig()) return;
+
+  if (!state.catalog.length) {
+    showToast('暂无分类，正在获取…', 'info');
+    loadCatalog(true);
     return;
   }
-  confirmPage.classList.toggle("show")
-  mainPage.classList.toggle("show")
-  let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const { favIconUrl, title, url } = tab;
-  data = {
-    catelog: LAST_OPTION || undefined,
-    desc: title,
-    name: title,
-    url: url,
-    logo: favIconUrl
+
+  const tab = state.currentTab;
+  if (!tab || !isWebUrl(tab.url)) {
+    showToast('当前页面不是普通网页，无法自动填充', 'error');
+    return;
+  }
+
+  // 用当前标签页预填表单
+  els.formCatalog.value = state.lastCatalog && state.catalog.includes(state.lastCatalog)
+    ? state.lastCatalog
+    : state.catalog[0];
+  els.formName.value = tab.title || '';
+  els.formDesc.value = tab.title || '';
+  els.formUrl.value = tab.url || '';
+  els.formLogo.value = tab.favIconUrl || '';
+  els.formHide1.checked = false;
+  els.formDefault1.checked = true;
+
+  showPage(els.confirmPage);
+  els.formName.focus();
+}
+
+async function handleConfirmAdd() {
+  const payload = {
+    catelog: els.formCatalog.value,
+    name: els.formName.value.trim(),
+    url: normalizeUrl(els.formUrl.value),
+    desc: els.formDesc.value.trim(),
+    logo: els.formLogo.value.trim(),
+    hide: els.formHide1.checked,
+    default: els.formDefault1.checked,
   };
-  formCatelog.value = data.catelog;
-  formDesc.value = data.desc;
-  formName.value = data.name;
-  formUrl.value = data.url;
-  formLogo.value = data.logo;
-}
 
-async function handleSettingConfirm(ev) {
-  // 读取数据
-  let baseUrl = settingBaseUrl.value
-  const token = settingToken.value
-  if (baseUrl.charAt(baseUrl.length - 1) === '/') {
-    baseUrl = baseUrl.slice(0, -1)
-  }
-  if (baseUrl && baseUrl !== "" && token && token !== "") {
-    chrome.storage.sync.set({ token: token, baseUrl: baseUrl }, function () {
-      BASE_URL = baseUrl;
-      TOKEN = token;
-      console.log('Value is set to ', token, baseUrl);
-    });
-    setLoading(true, settingPage)
-    fetchCateLog(undefined).then(res => {
-      handleOpenSetting(undefined)
-
-    }).finally(() => { setLoading(false, settingPage) })
-  } else {
-    alert("都是必填项！")
-  }
-}
-
-async function handleConfirm(ev) {
-  // alert("confirm")
-  setLoading(true, confirmPage)
-  // 保存上一个 option
-  LAST_OPTION = formCatelog.value
-  chrome.storage.sync.set({ lastOption: LAST_OPTION }, function () {
-  });
-  const res = await fetchAddTool()
-  if (res?.success == true) {
-  } else {
-    alert("添加失败！\n" + JSON.stringify(res, null, 2))
-  }
-  setLoading(false, confirmPage)
-  mainPage.classList.toggle("show")
-  confirmPage.classList.toggle("show")
-  console.log(res)
-  window.close();
-}
-async function handleCancel(ev) {
-  mainPage.classList.toggle("show")
-  confirmPage.classList.toggle("show")
-}
-function handleOpenSetting(ev) {
-  mainPage.classList.toggle("show")
-  settingPage.classList.toggle("show")
-  if (BASE_URL !== "" && BASE_URL) {
-    settingBaseUrl.value = BASE_URL
-  }
-  if (TOKEN !== "" && TOKEN) {
-    settingToken.value = TOKEN
-  }
-}
-async function handleOpenAdmin(ev) {
-  if (BASE_URL === "" || TOKEN === "") {
-    alert("请先在设置中设置基础 URL 和 TOKEN!")
+  // 必填校验（图标除外）
+  const missing = ['catelog', 'name', 'url', 'desc'].filter((k) => !payload[k]);
+  if (missing.length) {
+    showToast('除图标外均为必填项', 'error');
     return;
   }
-  let tabs = await chrome.tabs.query({ currentWindow: true });
-  let tab = tabs.find(i => i?.url?.indexOf(BASE_URL + '/admin') !== -1)
-  if (tab) {
-    chrome.tabs.update(tab.id, { active: true });
+  if (!isWebUrl(payload.url)) {
+    showToast('网址格式不正确，需以 http(s):// 开头', 'error');
+    return;
+  }
+
+  setLoading(true);
+  try {
+    const res = await api('/api/admin/tool', { method: 'POST', body: payload });
+    if (res && res.success) {
+      state.lastCatalog = payload.catelog;
+      setSync({ lastOption: payload.catelog }).catch(() => {});
+      showToast('站点添加成功 🎉', 'success', 1800);
+      await sleep(800);
+      window.close();
+    } else {
+      setLoading(false);
+      showToast((res && (res.msg || res.message)) || '添加失败，请稍后重试', 'error', 4000);
+    }
+  } catch (err) {
+    setLoading(false);
+    showToast(err.message || '添加失败', 'error', 4000);
+  }
+}
+
+function handleOpenSetting() {
+  els.settingBaseUrl.value = state.baseUrl;
+  els.settingToken.value = state.token;
+  showPage(els.settingPage);
+}
+
+// 将设置表单中的输入临时同步到 state（供“测试连接 / 获取分类”使用）
+function applySettingsInputs() {
+  const baseUrl = els.settingBaseUrl.value.trim().replace(/\/+$/, '');
+  const token = els.settingToken.value.trim();
+  if (baseUrl) state.baseUrl = baseUrl;
+  if (token) state.token = token;
+}
+
+async function handleSaveSetting() {
+  const baseUrl = els.settingBaseUrl.value.trim().replace(/\/+$/, '');
+  const token = els.settingToken.value.trim();
+
+  if (!isWebUrl(baseUrl)) {
+    showToast('站点地址需以 http(s):// 开头', 'error');
+    return;
+  }
+  if (!token) {
+    showToast('Token 不能为空', 'error');
+    return;
+  }
+
+  setLoading(true);
+  try {
+    await setSync({ baseUrl, token });
+    state.baseUrl = baseUrl;
+    state.token = token;
+    showToast('设置已保存', 'success', 1500);
+    showPage(els.mainPage);
+  } catch (err) {
+    showToast('保存失败：' + err.message, 'error');
+  } finally {
+    setLoading(false);
+  }
+  // 拉取最新分类（失败不影响设置保存）
+  loadCatalog(true);
+}
+
+async function handleTestConn() {
+  const baseUrl = els.settingBaseUrl.value.trim().replace(/\/+$/, '');
+  const token = els.settingToken.value.trim();
+  if (!baseUrl || !token) {
+    showToast('请先填写 baseUrl 与 Token', 'error');
+    return;
+  }
+
+  const prev = { baseUrl: state.baseUrl, token: state.token };
+  state.baseUrl = baseUrl;
+  state.token = token;
+
+  setLoading(true);
+  try {
+    await api('/api/admin/all');
+    showToast('连接正常 ✓', 'success', 1800);
+  } catch (err) {
+    showToast('连接失败：' + err.message, 'error', 4000);
+  } finally {
+    state.baseUrl = prev.baseUrl;
+    state.token = prev.token;
+    setLoading(false);
+  }
+}
+
+// 打开标签页；若当前窗口已存在相同站点则直接切换过去
+async function findOrOpenTab(urlToOpen, matchUrl) {
+  const tabs = await chrome.tabs.query({ currentWindow: true });
+  const hit = tabs.find((t) => t.url && t.url.indexOf(matchUrl) !== -1);
+  if (hit) {
+    await chrome.tabs.update(hit.id, { active: true });
   } else {
-    chrome.tabs.create({ url: BASE_URL + '/admin' });
+    await chrome.tabs.create({ url: urlToOpen });
   }
   window.close();
 }
-async function handleOpenWebsite(ev) {
-  if (BASE_URL === "" || TOKEN === "") {
-    alert("请先在设置中设置基础 URL 和 TOKEN!")
+
+async function handleOpenAdmin() {
+  if (!requireConfig()) return;
+  try {
+    await findOrOpenTab(state.baseUrl + '/admin', state.baseUrl + '/admin');
+  } catch (err) {
+    showToast(err.message || '打开后台失败', 'error');
+  }
+}
+
+async function handleOpenWebsite() {
+  if (!requireConfig()) return;
+  try {
+    await findOrOpenTab(state.baseUrl, state.baseUrl);
+  } catch (err) {
+    showToast(err.message || '打开前台失败', 'error');
+  }
+}
+
+function handleOpenWindow() {
+  chrome.tabs.create({ url: chrome.runtime.getURL('popup.html') });
+}
+
+function handleToggleToken() {
+  const show = els.settingToken.type === 'password';
+  els.settingToken.type = show ? 'text' : 'password';
+  els.btnToggleToken.textContent = show ? '隐藏' : '显示';
+}
+
+/* ============================ 当前标签页信息 ============================ */
+function renderTabInfo(tab) {
+  const box = els.currentTabInfo;
+  if (!tab || !tab.url) {
+    box.classList.remove('hidden');
+    box.innerHTML = '<span class="tab-badge warn">未知页面</span>' +
+      '<span class="tab-meta"><small class="tab-url">无法获取当前标签页信息</small></span>';
     return;
   }
-  let tabs = await chrome.tabs.query({ currentWindow: true });
-  let tab = tabs.find(i => i?.url?.indexOf(BASE_URL) !== -1)
-  if (tab) {
-    chrome.tabs.update(tab.id, { active: true });
-  } else {
-    chrome.tabs.create({ url: BASE_URL });
-  }
-  window.close();
-  // chrome.tabs.create({ url: BASE_URL });
-}
-
-function setLoading(isLoading, currPage) {
-  if (isLoading) {
-    currPage.classList.toggle("show")
-    loadingPage.classList.toggle("show")
-  } else {
-    currPage.classList.toggle("show")
-    loadingPage.classList.toggle("show")
-  }
-}
-
-async function fetchAddTool() {
-  if (!data) {
-    alert("无数据！")
-  }
-  // 获取实际数据
-  data = {
-    catelog: formCatelog.value,
-    desc: formDesc.value,
-    name: formName.value,
-    url: formUrl.value,
-    logo: formLogo.value,
-    hide: formHide1.checked
-  }
-
-  // 校验必填项
-  const mustHave = ['name', 'url', 'desc', 'catelog'];
-  const isValid = mustHave.every(key => {
-    return data[key] && data[key].length > 0;
-  });
-  if (!isValid) {
-    alert("除了图标都是必填项哦！");
+  if (!isWebUrl(tab.url)) {
+    box.classList.remove('hidden');
+    box.innerHTML = '<span class="tab-badge warn">不可添加</span>' +
+      '<span class="tab-meta"><small class="tab-url">当前页面不支持收录，请切换到普通网页</small></span>';
     return;
   }
-  return await postData(`${BASE_URL}/api/admin/tool`, data);
+  box.classList.remove('hidden');
+  box.innerHTML =
+    `<img class="tab-favicon" src="${escapeHtml(tab.favIconUrl || '')}" alt="" onerror="this.style.visibility='hidden'" />` +
+    '<span class="tab-meta">' +
+    `<strong class="tab-title">${escapeHtml(tab.title || '未知页面')}</strong>` +
+    `<small class="tab-url">${escapeHtml(tab.url)}</small>` +
+    '</span>' +
+    '<span class="tab-badge ok">可添加</span>';
 }
 
-async function postData(url = '', data = {}) {
-  // Default options are marked with *
-  const response = await fetch(url, {
-    method: 'POST', // *GET, POST, PUT, DELETE, etc.
-    mode: 'cors', // no-cors, *cors, same-origin
-    cache: 'no-cache', // *default, no-cache, reload, force-cache, only-if-cached
-    // credentials: 'same-origin', // include, *same-origin, omit
-    headers: {
-      'Content-Type': 'application/json',
-      "authorization": TOKEN,
-      // 'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    redirect: 'follow', // manual, *follow, error
-    referrerPolicy: 'no-referrer', // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
-    body: JSON.stringify(data) // body data type must match "Content-Type" header
-  });
-  return response.json(); // parses JSON response into native JavaScript objects
-}
-async function getData(url = '') {
-  // Default options are marked with *
-  const response = await fetch(url, {
-    method: 'GET', // *GET, POST, PUT, DELETE, etc.
-    mode: 'cors', // no-cors, *cors, same-origin
-    cache: 'no-cache', // *default, no-cache, reload, force-cache, only-if-cached
-    // credentials: 'same-origin', // include, *same-origin, omit
-    headers: {
-      'Content-Type': 'application/json',
-      "authorization": TOKEN,
-      // 'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    redirect: 'follow', // manual, *follow, error
-    referrerPolicy: 'no-referrer', // no-referrer, *no-referrer-when-downgrade, origin, origin-when-cross-origin, same-origin, strict-origin, strict-origin-when-cross-origin, unsafe-url
-  });
-  return response.json(); // parses JSON response into native JavaScript objects
+/* ============================ 初始化 ============================ */
+async function init() {
+  // 1. 读取配置与缓存
+  let sync = {};
+  let local = {};
+  try { sync = await getSync(['baseUrl', 'token', 'lastOption']); } catch (_) {}
+  try { local = await getLocal(['options']); } catch (_) {}
+
+  state.baseUrl = String(sync.baseUrl || '').trim();
+  state.token = String(sync.token || '').trim();
+  state.lastCatalog = String(sync.lastOption || '').trim();
+
+  // 旧版本分类缓存在 sync，迁移到 local 后清理
+  let cachedOptions = Array.isArray(local.options) ? local.options : [];
+  if (!cachedOptions.length && Array.isArray(sync.options) && sync.options.length) {
+    cachedOptions = sync.options;
+    setLocal({ options: cachedOptions }).catch(() => {});
+    setSync({ options: undefined }).catch(() => {});
+  }
+  state.catalog = cachedOptions;
+
+  // 2. 读取当前标签页
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    state.currentTab = tab || null;
+  } catch (_) {}
+  renderTabInfo(state.currentTab);
+
+  // 3. 首次使用：引导进入设置页
+  if (!state.baseUrl || !state.token) {
+    showToast('首次使用，请先设置站点地址与 Token', 'info', 4000);
+    handleOpenSetting();
+    return;
+  }
+
+  renderCatalog();
+  if (!state.catalog.length) loadCatalog();
 }
 
-function handleOpenExtension(){
-  chrome.tabs.create({url: chrome.runtime.getURL('popup.html')});
+/* ============================ 事件绑定 ============================ */
+function bindEvents() {
+  els.addForm.addEventListener('submit', (e) => { e.preventDefault(); handleConfirmAdd(); });
+  els.settingForm.addEventListener('submit', (e) => { e.preventDefault(); handleSaveSetting(); });
+
+  els.btnAddTool.addEventListener('click', handleAddTool);
+  els.btnOpenAdmin.addEventListener('click', handleOpenAdmin);
+  els.btnOpenWebsite.addEventListener('click', handleOpenWebsite);
+  els.btnOpenSetting.addEventListener('click', handleOpenSetting);
+  els.btnOpenWindow.addEventListener('click', handleOpenWindow);
+  els.btnRefresh.addEventListener('click', () => loadCatalog(true));
+
+  els.btnCancelAdd.addEventListener('click', () => showPage(els.mainPage));
+  els.btnCancelSetting.addEventListener('click', () => showPage(els.mainPage));
+  els.btnTestConn.addEventListener('click', handleTestConn);
+  els.btnFetchCatalog.addEventListener('click', () => { applySettingsInputs(); loadCatalog(true); });
+  els.btnToggleToken.addEventListener('click', handleToggleToken);
+
+  // Esc 返回主页面
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (els.confirmPage.classList.contains('active') || els.settingPage.classList.contains('active')) {
+      showPage(els.mainPage);
+    }
+  });
 }
+
+bindEvents();
+init();

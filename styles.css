@@ -1,77 +1,442 @@
+﻿/* =====================================================
+   VanNav 管理扩展 - 自定义样式（基于 Pico v1.5）
+   ===================================================== */
+
+:root {
+  --brand: #2563eb;
+  --brand-hover: #1d4ed8;
+  --primary: var(--brand);
+  --primary-hover: var(--brand-hover);
+  --radius: 10px;
+  --shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+
+html,
 body {
-  min-width: 400px;
-  /*min-height: 300px;*/
+  width: 400px;
 }
 
-button {
-  display: block;
-  margin: 6px 0 !important;
-  width: 100%;
+body {
+  font-size: 15px;
+  margin: 0;
+  overflow-x: hidden;
 }
 
-#openExtension {
-  height: 25px;
+.container.popup {
+  padding: 0 14px 16px;
+  max-width: none;
+}
+
+/* ============ 顶部品牌栏 ============ */
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0 10px;
+  border-bottom: 1px solid var(--muted-border-color, rgba(143, 155, 179, 0.25));
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--card-background-color, #fff);
+}
+
+.app-logo {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  flex: none;
+}
+
+.app-name {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.app-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
+/* ============ 图标按钮 ============ */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent;
+  border: none;
+  color: var(--muted-color, #6b7280);
+  font-size: 12px;
+  line-height: normal;
+  border-radius: 8px;
   cursor: pointer;
-  position: absolute;
-  left: 10px;
-  top: 5px;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
+.icon-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.icon-btn:hover {
+  background: var(--muted-border-color, #e5e7eb);
+  color: var(--color, #111827);
+}
+
+/* ============ 页面切换 ============ */
 .page {
   display: none;
-  padding-top: 12px;
+  padding-top: 4px;
 }
 
-.show {
+.page.active {
   display: block;
+  animation: fadeSlide 0.18s ease;
 }
 
-.flex {
+@keyframes fadeSlide {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.page-title {
+  font-size: 16px;
+  margin: 14px 0 4px;
+  font-weight: 700;
+}
+
+/* ============ 主菜单按钮 ============ */
+.menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 8px 0;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  font-size: 15px;
+  font-weight: 500;
+  background: var(--card-background-color, #fff);
+  border: 1px solid var(--muted-border-color, rgba(143, 155, 179, 0.25));
+  color: var(--color, #111827);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.menu-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+}
+
+.menu-btn:active {
+  transform: translateY(0);
+}
+
+.menu-btn svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  flex: none;
+}
+
+.menu-btn span {
+  color: var(--color, #111827);
+}
+
+.menu-btn.primary span {
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.menu-btn.primary svg {
+  color: var(--brand);
+}
+
+.menu-btn.small {
+  margin-top: 4px;
+  padding: 9px 12px;
+  font-size: 13px;
+  box-shadow: none;
+}
+
+.menu-btn.small svg {
+  width: 17px;
+  height: 17px;
+  opacity: 0.7;
+}
+
+/* ============ 当前标签页信息卡 ============ */
+.tab-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin: 10px 0 14px;
+  border: 1px dashed var(--muted-border-color, rgba(143, 155, 179, 0.45));
+  border-radius: var(--radius);
+}
+
+.tab-info.hidden {
+  display: none;
+}
+
+.tab-favicon {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 6px;
+}
+
+.tab-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tab-title {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab-url {
+  font-size: 11px;
+  opacity: 0.65;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab-badge {
+  margin-left: auto;
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 99px;
+}
+
+.tab-badge.ok {
+  background: rgba(16, 185, 129, 0.15);
+  color: #059669;
+}
+
+.tab-badge.warn {
+  background: rgba(245, 158, 11, 0.18);
+  color: #b45309;
+}
+
+/* ============ 表单 ============ */
+.page label {
+  font-size: 13px;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.page input,
+.page select {
+  padding: 10px 12px;
+  font-size: 14px;
+  border-radius: 8px;
+}
+
+select[disabled] {
+  cursor: not-allowed;
+}
+
+.required {
+  color: #dc2626;
+  margin-left: 2px;
+}
+
+.optional {
+  color: var(--muted-color, #6b7280);
+  font-weight: 400;
+  margin-left: 2px;
+}
+
+.inline-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 18px 0 0;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.inline-radio input {
+  width: 16px;
+  height: 16px;
+}
+
+.page fieldset {
+  border: none;
+  padding: 0;
+  margin: 14px 0 4px;
+}
+
+.page fieldset legend {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.switch-row input[role="switch"] {
+  width: 40px;
+  flex: none;
+}
+
+/* Token 显示切换 */
+.token-input {
+  position: relative;
+}
+
+.token-input input {
+  padding-right: 56px;
+}
+
+.token-input .icon-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  border-radius: 6px;
+}
+
+/* ============ 操作按钮组 ============ */
+.page-actions {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0 4px;
+}
+
+.page-actions button {
+  flex: 1;
+  margin: 0;
+  padding: 10px 8px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ============ 页脚说明 ============ */
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--muted-border-color, rgba(143, 155, 179, 0.2));
+  font-size: 11px;
+  color: var(--muted-color, #6b7280);
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--muted-color, #6b7280);
+  margin: 6px 0 12px;
+  line-height: 1.6;
+}
+
+/* ============ 加载遮罩 ============ */
+.page-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: color-mix(in srgb, var(--card-background-color, #fff) 74%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+body.loading .page-loader {
   display: flex;
 }
 
-.flex > button {
-  margin: 5px !important;
+.page-loader p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted-color, #6b7280);
 }
 
-.lds-dual-ring {
-  display: inline-block;
-  width: 80px;
-  height: 80px;
-}
-
-.lds-dual-ring:after {
-  content: " ";
-  display: block;
-  width: 64px;
-  height: 64px;
-  margin: 8px;
+.spinner {
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
-  border: 6px solid #000;
-  border-color: #000 transparent #000 transparent;
-  animation: lds-dual-ring 1.2s linear infinite;
+  border: 3px solid var(--muted-border-color, #e5e7eb);
+  border-top-color: var(--brand);
+  animation: spin 0.8s linear infinite;
 }
 
-@keyframes lds-dual-ring {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
+@keyframes spin {
+  to {
     transform: rotate(360deg);
   }
 }
 
-.loadingWraper {
-  /* display: flex;
-  justify-content: center;
-  align-items: center; */
-  position: absolute;
+/* ============ Toast 通知 ============ */
+.toast {
+  position: fixed;
   left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  bottom: 18px;
+  z-index: 30;
+  transform: translate(-50%, 14px);
+  background: #111827;
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  max-width: 330px;
+  text-align: center;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
-/* 只有loadingpage高度自适应有问题，单独设置一下 */
-#loadingPage{
-  min-height: 100px;
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.toast.success {
+  background: #059669;
+}
+
+.toast.error {
+  background: #dc2626;
+}
+
+.toast.info {
+  background: var(--brand);
 }
