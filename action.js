@@ -8,6 +8,7 @@
  *  4. 分类缓存改存 chrome.storage.local（规避 sync 8KB 单项上限）
  *  5. 首次使用自动引导进入设置页
  *  6. 添加工具支持排序 sort（-1 添加到最后，0 或留空添加到最前）
+ *  7. 描述 desc 改为读取网页 meta description（读取失败时回退为页面标题）
  */
 'use strict';
 
@@ -254,6 +255,44 @@ function requireConfig() {
   return false;
 }
 
+// 当前正在进行的“网页描述读取”任务，提交前需确保其完成
+let descTask = null;
+
+// 读取当前页面 meta description（优先 name=description，其次 og/twitter）
+// 无法注入或页面未提供描述时返回空串，由调用方决定兜底策略
+async function readPageDescription(tabId) {
+  if (!tabId || !chrome.scripting || !chrome.scripting.executeScript) return '';
+  try {
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const metas = [...document.querySelectorAll('meta')];
+        const readMeta = (attr, value) => {
+          const hit = metas.find((m) => (m.getAttribute(attr) || '').toLowerCase() === value);
+          const content = hit && hit.getAttribute('content');
+          return content ? String(content).replace(/\s+/g, ' ').trim() : '';
+        };
+        return readMeta('name', 'description') ||
+          readMeta('property', 'og:description') ||
+          readMeta('name', 'twitter:description') ||
+          '';
+      },
+    });
+    return (result && result.result) || '';
+  } catch (_) {
+    return ''; // 特殊页面（内置页 / 无权限）静默降级
+  }
+}
+
+// 异步用网页描述覆盖表单描述；用户已手动改动时不覆盖
+async function fillDescFromPage(tab) {
+  const fallback = els.formDesc.value;
+  const desc = await readPageDescription(tab.id);
+  if (!desc) return;
+  if (els.formDesc.value !== fallback) return;
+  els.formDesc.value = desc;
+}
+
 function handleAddTool() {
   if (!requireConfig()) return;
 
@@ -274,7 +313,7 @@ function handleAddTool() {
     ? state.lastCatalog
     : state.catalog[0];
   els.formName.value = tab.title || '';
-  els.formDesc.value = tab.title || '';
+  els.formDesc.value = tab.title || ''; // 先用标题兜底，随后替换为网页 description
   els.formUrl.value = tab.url || '';
   els.formLogo.value = tab.favIconUrl || '';
   els.formSort.value = String(DEFAULT_SORT);
@@ -283,9 +322,18 @@ function handleAddTool() {
 
   showPage(els.confirmPage);
   els.formName.focus();
+
+  // 异步读取网页 description，填充得更准（不阻塞页面展示）
+  descTask = fillDescFromPage(tab);
 }
 
 async function handleConfirmAdd() {
+  // 若描述仍在读取中，先等它完成，避免提交到标题兜底值
+  if (descTask) {
+    try { await descTask; } catch (_) {}
+    descTask = null;
+  }
+
   const payload = {
     catelog: els.formCatalog.value,
     name: els.formName.value.trim(),
