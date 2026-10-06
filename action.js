@@ -1,5 +1,5 @@
 ﻿/*!
- * VanNav 管理扩展 - action.js
+ * Van Nav 管理扩展 - action.js
  *
  * 重构要点：
  *  1. 统一请求封装：超时 + HTTP 状态校验 + 错误透出

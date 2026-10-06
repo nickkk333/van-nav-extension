@@ -1,6 +1,6 @@
-# VanNav 管理扩展（Chrome）
+# Van Nav 管理扩展（Chrome）
 
-为 [VanNav](https://github.com/Mereithhh/van-nav) 导航站的 Chrome 管理扩展：一键收录当前页面，快捷访问前台 / 后台。
+为 [Van Nav](https://github.com/nickkk333/van-nav) 导航站的 Chrome 管理扩展：一键收录当前页面，快捷访问前台 / 后台。
 
 ## 功能特性
 
@@ -22,7 +22,7 @@
 ## 使用
 
 1. 点击工具栏的扩展图标
-2. 首次使用会引导进入“扩展设置”，填写站点地址与 Token（在 VanNav 后台可获取）
+2. 首次使用会引导进入“扩展设置”，填写站点地址与 Token（在 Van Nav 后台可获取）
 3. 点击右上角刷新按钮同步分类
 4. 在任意网页点击“添加当前页面”即可快速收录
 
