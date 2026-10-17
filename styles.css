@@ -1,4 +1,4 @@
-﻿/* =====================================================
+/* =====================================================
    Van Nav 管理扩展 - 自定义样式（基于 Pico v1.5）
    ===================================================== */
 
@@ -9,6 +9,9 @@
   --primary-hover: var(--brand-hover);
   --radius: 10px;
   --shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  /* 在 :root 层解析 --color：Pico 会把 <button> 内的 --color 局部改成 #fff，
+     直接使用 var(--color) 会导致浅色模式下按钮白字白底、看不清 */
+  --vn-text: var(--color, #111827);
 }
 
 html,
@@ -85,7 +88,7 @@ body {
 
 .icon-btn:hover {
   background: var(--muted-border-color, #e5e7eb);
-  color: var(--color, #111827);
+  color: var(--vn-text);
 }
 
 /* ============ 页面切换 ============ */
@@ -129,7 +132,7 @@ body {
   font-weight: 500;
   background: var(--card-background-color, #fff);
   border: 1px solid var(--muted-border-color, rgba(143, 155, 179, 0.25));
-  color: var(--color, #111827);
+  color: var(--vn-text);
   box-shadow: var(--shadow);
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
@@ -152,7 +155,7 @@ body {
 }
 
 .menu-btn span {
-  color: var(--color, #111827);
+  color: var(--vn-text);
 }
 
 .menu-btn.primary span {
@@ -368,14 +371,20 @@ button:disabled {
 /* ============ 加载遮罩 ============ */
 .page-loader {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 20;
   display: none;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 10px;
+  /* 回退：不支持 color-mix 的旧内核使用不透明主题底色 */
+  background: var(--card-background-color, #fff);
   background: color-mix(in srgb, var(--card-background-color, #fff) 74%, transparent);
+  -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
 }
 

@@ -1,4 +1,4 @@
-﻿/*!
+/*!
  * Van Nav 管理扩展 - action.js
  *
  * 重构要点：
@@ -500,12 +500,21 @@ function renderTabInfo(tab) {
   }
   box.classList.remove('hidden');
   box.innerHTML =
-    `<img class="tab-favicon" src="${escapeHtml(tab.favIconUrl || '')}" alt="" onerror="this.style.visibility='hidden'" />` +
+    `<img class="tab-favicon" src="${escapeHtml(tab.favIconUrl || '')}" alt="" />` +
     '<span class="tab-meta">' +
     `<strong class="tab-title">${escapeHtml(tab.title || '未知页面')}</strong>` +
     `<small class="tab-url">${escapeHtml(tab.url)}</small>` +
     '</span>' +
     '<span class="tab-badge ok">可添加</span>';
+
+  // 内联 onerror 会被 MV3 的 CSP 拦截，改为脚本绑定
+  const fav = box.querySelector('.tab-favicon');
+  if (fav) {
+    const hideFav = () => { fav.style.visibility = 'hidden'; };
+    fav.addEventListener('error', hideFav);
+    // 监听前若已加载失败（无图标或加载错误），立即隐藏
+    if (!tab.favIconUrl || (fav.complete && fav.naturalWidth === 0)) hideFav();
+  }
 }
 
 /* ============================ 初始化 ============================ */
