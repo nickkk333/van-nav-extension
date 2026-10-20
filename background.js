@@ -11,7 +11,10 @@
 'use strict';
 
 const SITE_KEY = 'baseUrl';
+const INTRANET_KEY = 'intranetUrl';
 const MODE_KEY = 'browserMode';
+const NETWORK_KEY = 'networkState';
+const NETWORK_CHECK_TIMEOUT = 2000;
 
 // chrome://newtab、edge://newtab、about:newtab 等各浏览器的新标签页地址
 const NEW_TAB_RE =
@@ -75,11 +78,87 @@ function getSync(keys) {
   });
 }
 
+function getLocal(keys) {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(keys, (res) => {
+      void chrome.runtime.lastError;
+      resolve(res || {});
+    });
+  });
+}
+
+function setLocal(values) {
+  return new Promise((resolve) => {
+    chrome.storage.local.set(values, () => {
+      void chrome.runtime.lastError;
+      resolve();
+    });
+  });
+}
+
+/* ============================ 网络环境检测 ============================ */
+async function isUrlReachable(url) {
+  if (!url) return false;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), NETWORK_CHECK_TIMEOUT);
+  try {
+    // no-cors 只关心是否可达，不要求内网站点允许跨域
+    await fetch(url, {
+      method: 'GET',
+      mode: 'no-cors',
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    return true;
+  } catch (_) {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function detectNetworkState() {
+  const res = await getSync([INTRANET_KEY]);
+  const intranetUrl = normalizeSiteUrl(res[INTRANET_KEY]);
+  if (!intranetUrl) return 'external';
+  return (await isUrlReachable(intranetUrl)) ? 'intranet' : 'external';
+}
+
+let pendingNetworkCheck = null;
+
+function refreshNetworkState(force = false) {
+  if (pendingNetworkCheck) {
+    if (!force) return pendingNetworkCheck;
+    // 强制重新检测：等当前检测结束后，再按最新设置检测一次
+    return pendingNetworkCheck
+      .catch(() => {})
+      .then(() => refreshNetworkState());
+  }
+
+  const task = detectNetworkState().then(async (networkState) => {
+    await setLocal({ networkState, networkCheckedAt: Date.now() });
+    return networkState;
+  });
+  pendingNetworkCheck = task.finally(() => {
+    pendingNetworkCheck = null;
+  });
+  return pendingNetworkCheck;
+}
+
 async function getConfig() {
-  const res = await getSync([SITE_KEY, MODE_KEY]);
-  const siteUrl = normalizeSiteUrl(res[SITE_KEY]);
-  const mode = res[MODE_KEY] === 'home' || res[MODE_KEY] === 'newtab' ? res[MODE_KEY] : 'off';
-  return { siteUrl, mode, host: siteHost(siteUrl) };
+  const [sync, local] = await Promise.all([
+    getSync([SITE_KEY, INTRANET_KEY, MODE_KEY]),
+    getLocal([NETWORK_KEY]),
+  ]);
+
+  const externalUrl = normalizeSiteUrl(sync[SITE_KEY]);
+  const intranetUrl = normalizeSiteUrl(sync[INTRANET_KEY]);
+  const networkState = intranetUrl && local[NETWORK_KEY] === 'intranet' ? 'intranet' : 'external';
+  const siteUrl = networkState === 'intranet' ? intranetUrl : externalUrl;
+  const mode = sync[MODE_KEY] === 'home' || sync[MODE_KEY] === 'newtab' ? sync[MODE_KEY] : 'off';
+
+  return { siteUrl, externalUrl, intranetUrl, networkState, mode, host: siteHost(siteUrl) };
 }
 
 /* ============================ 标签页操作 ============================ */
@@ -108,6 +187,12 @@ async function processNewTab(tab) {
   const last = handledTabs.get(tab.id) || 0;
   if (Date.now() - last < 2000) return;
   handledTabs.set(tab.id, Date.now());
+
+  // 浏览器启动时先等待网络检测完成，避免用错内网 / 外网地址
+  const check = pendingNetworkCheck;
+  if (check) {
+    try { await check; } catch (_) {}
+  }
 
   const { siteUrl, mode, host } = await getConfig();
   if (!siteUrl || mode === 'off') return;
@@ -161,7 +246,30 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  setTimeout(() => {
-    void ensureStartupSite();
-  }, 1200);
+  void (async () => {
+    try {
+      await refreshNetworkState();
+    } catch (_) {}
+
+    // 等浏览器恢复会话 / 打开启动页后再确保站点已打开
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    await ensureStartupSite();
+  })();
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  void refreshNetworkState();
+});
+
+// 设置页保存或手动重新检测时调用
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (!message || message.type !== 'van-nav:check-network') return;
+
+  const respond = (state) => {
+    try { sendResponse({ state }); } catch (_) {}
+  };
+  refreshNetworkState(true)
+    .then((state) => respond(state))
+    .catch(() => respond('external'));
+  return true;
 });

@@ -33,8 +33,6 @@ const els = {
 
   btnRefresh: $('#refreshCatalog'),
   btnAddTool: $('#addTool'),
-  btnOpenAdmin: $('#openAdmin'),
-  btnOpenWebsite: $('#openWebsite'),
   btnOpenSetting: $('#openSetting'),
   btnOpenBrowserSettings: $('#openBrowserSettings'),
   btnOpenWindow: $('#openWindow'),
@@ -55,7 +53,10 @@ const els = {
   formDefault1: $('#default1'),
 
   settingBaseUrl: $('#baseUrl'),
+  settingIntranetUrl: $('#intranetUrl'),
   settingToken: $('#token'),
+  networkStateText: $('#networkStateText'),
+  btnRefreshNetwork: $('#refreshNetwork'),
 
   toast: $('#toast'),
   toastContent: $('#toastContent'),
@@ -64,6 +65,8 @@ const els = {
 /* ============================ 状态 ============================ */
 const state = {
   baseUrl: '',
+  intranetUrl: '',
+  networkState: 'external',
   token: '',
   browserMode: 'off',
   catalog: [],
@@ -88,6 +91,17 @@ const normalizeUrl = (raw) => {
 };
 
 const isWebUrl = (raw) => /^https?:\/\/.+/i.test(String(raw || ''));
+
+// 内网地址允许省略协议，默认补全 http://
+const normalizeIntranetUrl = (raw) => {
+  const url = String(raw || '').trim().replace(/\/+$/, '');
+  if (!url) return '';
+  return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(url) ? url : `http://${url}`;
+};
+
+// 当前网络状态下实际使用的站点地址
+const activeBaseUrl = () =>
+  (state.networkState === 'intranet' && state.intranetUrl ? state.intranetUrl : state.baseUrl);
 
 // 排序默认值：-1 表示添加到分类最后
 const DEFAULT_SORT = -1;
@@ -141,7 +155,7 @@ async function api(path, { method = 'GET', body } = {}) {
   const timer = setTimeout(() => controller.abort(), 15000);
 
   try {
-    const res = await fetch(state.baseUrl + path, {
+    const res = await fetch(activeBaseUrl() + path, {
       method,
       headers: {
         'Content-Type': 'application/json',
@@ -383,26 +397,60 @@ async function handleConfirmAdd() {
   }
 }
 
+function renderNetworkStatus() {
+  const useIntranet = state.networkState === 'intranet' && !!state.intranetUrl;
+  els.networkStateText.textContent = useIntranet ? '内网' : '外网';
+  els.networkStateText.classList.toggle('is-intranet', useIntranet);
+}
+
+// 让后台重新检测内网是否可用，并返回当前网络状态
+function requestNetworkState() {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage({ type: 'van-nav:check-network' }, (res) => {
+        const err = chrome.runtime.lastError;
+        if (!err && res && (res.state === 'intranet' || res.state === 'external')) {
+          resolve(res.state);
+        } else {
+          resolve('external');
+        }
+      });
+    } catch (_) {
+      resolve('external');
+    }
+  });
+}
+
 function handleOpenSetting() {
   els.settingBaseUrl.value = state.baseUrl;
+  els.settingIntranetUrl.value = state.intranetUrl;
   els.settingToken.value = state.token;
+  renderNetworkStatus();
   showPage(els.settingPage);
 }
 
 // 将设置表单中的输入临时同步到 state（供“测试连接 / 获取分类”使用）
 function applySettingsInputs() {
   const baseUrl = els.settingBaseUrl.value.trim().replace(/\/+$/, '');
+  const intranetUrl = normalizeIntranetUrl(els.settingIntranetUrl.value);
   const token = els.settingToken.value.trim();
   if (baseUrl) state.baseUrl = baseUrl;
   if (token) state.token = token;
+  state.intranetUrl = intranetUrl;
+  if (!intranetUrl) state.networkState = 'external';
 }
 
 async function handleSaveSetting() {
   const baseUrl = els.settingBaseUrl.value.trim().replace(/\/+$/, '');
+  const intranetUrl = normalizeIntranetUrl(els.settingIntranetUrl.value);
   const token = els.settingToken.value.trim();
 
   if (!isWebUrl(baseUrl)) {
     showToast('站点地址需以 http(s):// 开头', 'error');
+    return;
+  }
+  if (intranetUrl && !isWebUrl(intranetUrl)) {
+    showToast('内网地址需以 http(s):// 开头', 'error');
     return;
   }
   if (!token) {
@@ -412,9 +460,15 @@ async function handleSaveSetting() {
 
   setLoading(true);
   try {
-    await setSync({ baseUrl, token });
+    await setSync({ baseUrl, intranetUrl, token });
     state.baseUrl = baseUrl;
+    state.intranetUrl = intranetUrl;
     state.token = token;
+
+    // 保存后立即检测内网可用性，后续请求按检测结果选择地址
+    state.networkState = await requestNetworkState();
+    renderNetworkStatus();
+
     showToast('设置已保存', 'success', 1500);
     showPage(els.mainPage);
   } catch (err) {
@@ -434,9 +488,13 @@ async function handleTestConn() {
     return;
   }
 
-  const prev = { baseUrl: state.baseUrl, token: state.token };
-  state.baseUrl = baseUrl;
-  state.token = token;
+  const prev = {
+    baseUrl: state.baseUrl,
+    intranetUrl: state.intranetUrl,
+    networkState: state.networkState,
+    token: state.token,
+  };
+  applySettingsInputs();
 
   setLoading(true);
   try {
@@ -446,38 +504,28 @@ async function handleTestConn() {
     showToast('连接失败：' + err.message, 'error', 4000);
   } finally {
     state.baseUrl = prev.baseUrl;
+    state.intranetUrl = prev.intranetUrl;
+    state.networkState = prev.networkState;
     state.token = prev.token;
     setLoading(false);
   }
 }
 
-// 打开标签页；若当前窗口已存在相同站点则直接切换过去
-async function findOrOpenTab(urlToOpen, matchUrl) {
-  const tabs = await chrome.tabs.query({ currentWindow: true });
-  const hit = tabs.find((t) => t.url && t.url.indexOf(matchUrl) !== -1);
-  if (hit) {
-    await chrome.tabs.update(hit.id, { active: true });
-  } else {
-    await chrome.tabs.create({ url: urlToOpen });
-  }
-  window.close();
-}
-
-async function handleOpenAdmin() {
-  if (!requireConfig()) return;
+async function handleRefreshNetwork() {
+  setLoading(true);
   try {
-    await findOrOpenTab(state.baseUrl + '/admin', state.baseUrl + '/admin');
-  } catch (err) {
-    showToast(err.message || '打开后台失败', 'error');
-  }
-}
+    state.networkState = await requestNetworkState();
+    renderNetworkStatus();
 
-async function handleOpenWebsite() {
-  if (!requireConfig()) return;
-  try {
-    await findOrOpenTab(state.baseUrl, state.baseUrl);
-  } catch (err) {
-    showToast(err.message || '打开前台失败', 'error');
+    let message = '内网不可用，使用外网地址';
+    if (state.networkState === 'intranet') {
+      message = '内网可用，已切换到内网地址';
+    } else if (!state.intranetUrl) {
+      message = '未配置内网地址，使用外网地址';
+    }
+    showToast(message, 'info', 2400);
+  } finally {
+    setLoading(false);
   }
 }
 
@@ -500,7 +548,8 @@ function markBrowserModeSelected() {
 }
 
 function renderBrowserSettings() {
-  const siteUrl = isWebUrl(state.baseUrl) ? state.baseUrl : '';
+  const effectiveUrl = activeBaseUrl();
+  const siteUrl = isWebUrl(effectiveUrl) ? effectiveUrl : '';
   const link = els.browserSiteUrl;
 
   if (siteUrl) {
@@ -594,10 +643,12 @@ async function init() {
   // 1. 读取配置与缓存
   let sync = {};
   let local = {};
-  try { sync = await getSync(['baseUrl', 'token', 'lastOption', 'browserMode']); } catch (_) {}
-  try { local = await getLocal(['options']); } catch (_) {}
+  try { sync = await getSync(['baseUrl', 'intranetUrl', 'token', 'lastOption', 'browserMode']); } catch (_) {}
+  try { local = await getLocal(['options', 'networkState']); } catch (_) {}
 
   state.baseUrl = String(sync.baseUrl || '').trim();
+  state.intranetUrl = normalizeIntranetUrl(sync.intranetUrl);
+  state.networkState = state.intranetUrl && local.networkState === 'intranet' ? 'intranet' : 'external';
   state.token = String(sync.token || '').trim();
   state.lastCatalog = String(sync.lastOption || '').trim();
   state.browserMode = sync.browserMode === 'home' || sync.browserMode === 'newtab' ? sync.browserMode : 'off';
@@ -636,8 +687,6 @@ function bindEvents() {
   els.browserSettingForm.addEventListener('submit', handleSaveBrowserSettings);
 
   els.btnAddTool.addEventListener('click', handleAddTool);
-  els.btnOpenAdmin.addEventListener('click', handleOpenAdmin);
-  els.btnOpenWebsite.addEventListener('click', handleOpenWebsite);
   els.btnOpenSetting.addEventListener('click', handleOpenSetting);
   els.btnOpenBrowserSettings.addEventListener('click', handleOpenBrowserSettings);
   els.btnOpenWindow.addEventListener('click', handleOpenWindow);
@@ -649,6 +698,7 @@ function bindEvents() {
   els.btnTestConn.addEventListener('click', handleTestConn);
   els.btnFetchCatalog.addEventListener('click', () => { applySettingsInputs(); loadCatalog(true); });
   els.btnToggleToken.addEventListener('click', handleToggleToken);
+  els.btnRefreshNetwork.addEventListener('click', handleRefreshNetwork);
 
   els.browserModeInputs.forEach((input) => {
     input.addEventListener('change', markBrowserModeSelected);

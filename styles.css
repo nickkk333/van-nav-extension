@@ -328,6 +328,44 @@ select[disabled] {
   border-radius: 6px;
 }
 
+/* ============ 网络状态 ============ */
+.network-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: -2px 0 12px;
+}
+
+.network-status strong {
+  color: var(--muted-color, #6b7280);
+}
+
+.network-status strong.is-intranet {
+  color: #059669;
+}
+
+.link-btn {
+  flex: none;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  background: transparent;
+  color: var(--brand-hover);
+}
+
 /* ============ 操作按钮组 ============ */
 .page-actions {
   display: flex;
