@@ -450,186 +450,113 @@ body.loading .page-loader {
   background: var(--brand);
 }
 
-/* ============ 扩展设置页分隔 ============ */
-.setting-divider {
-  height: 1px;
-  margin: 16px 0 4px;
-  background: var(--muted-border-color, rgba(143, 155, 179, 0.25));
-}
-
-/* ============ 浏览器设置页 ============ */
-html.options-root,
-html.options-root body {
-  width: auto;
-  min-height: 100%;
-}
-
-body.options-page {
-  min-height: 100vh;
-  margin: 0;
-  background: var(--background-color, #fff);
-}
-
-.options-wrap {
-  max-width: 680px;
-  margin: 0 auto;
-  padding: 34px 20px 48px;
-}
-
-.options-header {
+/* ============ 浏览器设置 ============ */
+.browser-setting-page .site-row {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding-bottom: 20px;
-  margin-bottom: 24px;
-  border-bottom: 1px solid var(--muted-border-color, rgba(143, 155, 179, 0.25));
-}
-
-.options-header .app-logo {
-  width: 42px;
-  height: 42px;
-  border-radius: 10px;
-}
-
-.options-heading h1 {
-  margin: 0 0 4px;
-  padding: 0;
-  font-size: 24px;
-  line-height: 1.25;
-}
-
-.options-heading p {
-  margin: 0;
-  font-size: 13px;
-  color: var(--muted-color, #6b7280);
-}
-
-.options-card {
-  padding: 22px;
-  background: var(--card-background-color, #fff);
-  border: 1px solid var(--muted-border-color, rgba(143, 155, 179, 0.25));
-  border-radius: 14px;
-  box-shadow: var(--shadow);
-}
-
-.site-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  margin-bottom: 18px;
+  gap: 10px;
+  padding: 9px 12px;
+  margin: 10px 0 8px;
   background: rgba(37, 99, 235, 0.07);
-  border-radius: 10px;
+  border-radius: 9px;
 }
 
-.site-row .site-label {
+.browser-setting-page .site-label {
   flex: none;
   font-size: 12px;
   font-weight: 600;
   color: var(--muted-color, #6b7280);
 }
 
-.site-url {
+.browser-setting-page .site-url {
   min-width: 0;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--brand);
   text-decoration: none;
   word-break: break-all;
 }
 
-.site-url[href]:hover {
+.browser-setting-page .site-url[href]:hover {
   text-decoration: underline;
 }
 
-.site-warning {
-  padding: 11px 14px;
-  margin: 0 0 18px;
-  font-size: 13px;
+.browser-setting-page .site-warning {
+  padding: 9px 12px;
+  margin: 0 0 10px;
+  font-size: 12px;
   color: #b45309;
   background: rgba(245, 158, 11, 0.13);
-  border-radius: 9px;
+  border-radius: 8px;
 }
 
-.options-page .hidden {
+.browser-setting-page .hidden {
   display: none !important;
 }
 
-.mode-list {
+.browser-setting-page .mode-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 9px;
   padding: 0;
-  margin: 0 0 22px;
+  margin: 4px 0 6px;
   border: none;
 }
 
-.mode-list legend {
+.browser-setting-page .mode-list legend {
   padding: 0;
-  margin-bottom: 12px;
-  font-size: 14px;
-  font-weight: 700;
+  margin-bottom: 9px;
+  font-size: 13px;
+  font-weight: 600;
 }
 
-.mode-card {
+.browser-setting-page .mode-card {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding: 15px 16px;
+  gap: 10px;
+  padding: 11px 12px;
   margin: 0;
+  font-size: 13px;
   font-weight: 400;
   border: 1.5px solid var(--muted-border-color, rgba(143, 155, 179, 0.35));
-  border-radius: 12px;
+  border-radius: 10px;
   cursor: pointer;
   background: transparent;
   transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
-.mode-card:hover {
+.browser-setting-page .mode-card:hover {
   border-color: var(--brand);
 }
 
-.mode-card.selected {
+.browser-setting-page .mode-card.selected {
   background: rgba(37, 99, 235, 0.07);
   border-color: var(--brand);
 }
 
-.mode-card input {
+.browser-setting-page .mode-card input {
   flex: none;
-  width: 18px;
-  height: 18px;
-  margin: 3px 0 0;
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  margin: 2px 0 0;
   accent-color: var(--brand);
 }
 
-.mode-text {
+.browser-setting-page .mode-text {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
 }
 
-.mode-text strong {
-  font-size: 15px;
+.browser-setting-page .mode-text strong {
+  font-size: 14px;
   color: var(--vn-text);
 }
 
-.mode-text small {
-  font-size: 12.5px;
+.browser-setting-page .mode-text small {
+  font-size: 12px;
   font-weight: 400;
-  line-height: 1.6;
+  line-height: 1.55;
   color: var(--muted-color, #6b7280);
-}
-
-.options-actions {
-  margin-top: 0;
-}
-
-.options-actions button {
-  flex: 0 0 auto;
-  width: auto;
-  padding: 10px 22px;
-}
-
-.options-card .hint {
-  margin-bottom: 0;
 }

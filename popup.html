@@ -53,6 +53,12 @@
         </svg>
         <span>扩展设置</span>
       </button>
+      <button id="openBrowserSettings" class="menu-btn" type="button">
+        <svg viewBox="0 0 24 24">
+          <path d="M19 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 14H5V8h14v10z" />
+        </svg>
+        <span>浏览器设置</span>
+      </button>
       <button id="openWindow" class="menu-btn small" type="button">
         <svg viewBox="0 0 24 24">
           <path d="M14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2v7z" />
@@ -134,13 +140,55 @@
         </div>
 
         <p class="hint">提示：在 Van Nav 后台「设置」页面可获取站点地址与 API Token。站点地址填到域名部分即可，无需包含 /admin。</p>
+      </form>
+    </section>
 
-        <div class="setting-divider"></div>
+    <!-- ===== 浏览器设置 ===== -->
+    <section id="browserSettingPage" class="page browser-setting-page" aria-label="浏览器设置">
+      <h2 class="page-title">浏览器设置</h2>
+      <p class="hint">选择浏览器启动页与新标签页的打开方式。</p>
+
+      <div class="site-row">
+        <span class="site-label">访问站点</span>
+        <a id="browserSiteUrl" class="site-url">未配置站点地址</a>
+      </div>
+      <p id="browserSiteWarning" class="site-warning hidden">尚未配置站点地址，请先在「扩展设置」中填写站点地址与 Token。</p>
+
+      <form id="browserSettingForm" novalidate>
+        <fieldset class="mode-list">
+          <legend>打开方式</legend>
+
+          <label class="mode-card" for="modeHome">
+            <input type="radio" id="modeHome" name="browserMode" value="home" />
+            <span class="mode-text">
+              <strong>主页模式</strong>
+              <small>浏览器启动时打开站点网址。每次打开新标签页时，自动切回已打开的站点标签页，不会保留空白新标签页。</small>
+            </span>
+          </label>
+
+          <label class="mode-card" for="modeNewtab">
+            <input type="radio" id="modeNewtab" name="browserMode" value="newtab" />
+            <span class="mode-text">
+              <strong>新建标签页模式</strong>
+              <small>浏览器启动页与新建标签页均为站点网址，每次打开新标签页都会直接加载站点。</small>
+            </span>
+          </label>
+
+          <label class="mode-card" for="modeOff">
+            <input type="radio" id="modeOff" name="browserMode" value="off" checked />
+            <span class="mode-text">
+              <strong>关闭</strong>
+              <small>不接管浏览器启动页和新标签页，保持浏览器原有行为。</small>
+            </span>
+          </label>
+        </fieldset>
+
+        <p class="hint">受浏览器安全限制，扩展无法直接修改浏览器自带的「启动时」与「主页」设置，因此通过监听启动和新标签页事件实现相同效果。</p>
 
         <div class="page-actions">
-          <button id="openBrowserSettings" class="secondary outline" type="button">浏览器设置</button>
+          <button id="saveBrowserSetting" type="submit">保存设置</button>
+          <button id="cancelBrowserSetting" class="secondary outline" type="button">返回</button>
         </div>
-        <p class="hint">浏览器设置：让浏览器启动页和新标签页自动打开当前站点，支持主页模式与新建标签页模式。</p>
       </form>
     </section>
 

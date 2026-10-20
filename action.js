@@ -25,6 +25,11 @@ const els = {
 
   addForm: $('#addForm'),
   settingForm: $('#settingForm'),
+  browserSettingForm: $('#browserSettingForm'),
+  browserSettingPage: $('#browserSettingPage'),
+  browserSiteUrl: $('#browserSiteUrl'),
+  browserSiteWarning: $('#browserSiteWarning'),
+  browserModeInputs: $$('input[name="browserMode"]'),
 
   btnRefresh: $('#refreshCatalog'),
   btnAddTool: $('#addTool'),
@@ -38,6 +43,7 @@ const els = {
   btnTestConn: $('#testConn'),
   btnFetchCatalog: $('#fetchCatelog'),
   btnToggleToken: $('#toggleToken'),
+  btnCancelBrowserSetting: $('#cancelBrowserSetting'),
 
   formCatalog: $('#catelog'),
   formName: $('#name'),
@@ -59,6 +65,7 @@ const els = {
 const state = {
   baseUrl: '',
   token: '',
+  browserMode: 'off',
   catalog: [],
   lastCatalog: '',
   currentTab: null,
@@ -478,8 +485,68 @@ function handleOpenWindow() {
   chrome.tabs.create({ url: chrome.runtime.getURL('popup.html') });
 }
 
+/* ============================ 浏览器设置 ============================ */
+function selectedBrowserMode() {
+  const checked = els.browserModeInputs.find((input) => input.checked);
+  return checked ? checked.value : 'off';
+}
+
+function markBrowserModeSelected() {
+  const current = selectedBrowserMode();
+  els.browserModeInputs.forEach((input) => {
+    const card = input.closest('.mode-card');
+    if (card) card.classList.toggle('selected', input.value === current);
+  });
+}
+
+function renderBrowserSettings() {
+  const siteUrl = isWebUrl(state.baseUrl) ? state.baseUrl : '';
+  const link = els.browserSiteUrl;
+
+  if (siteUrl) {
+    link.textContent = siteUrl;
+    link.href = siteUrl;
+    link.target = '_blank';
+    link.rel = 'noreferrer';
+    els.browserSiteWarning.classList.add('hidden');
+  } else {
+    link.textContent = '未配置站点地址';
+    link.removeAttribute('href');
+    link.removeAttribute('target');
+    els.browserSiteWarning.classList.remove('hidden');
+  }
+
+  const mode = state.browserMode === 'home' || state.browserMode === 'newtab' ? state.browserMode : 'off';
+  const input = els.browserModeInputs.find((item) => item.value === mode);
+  if (input) input.checked = true;
+  markBrowserModeSelected();
+}
+
 function handleOpenBrowserSettings() {
-  chrome.tabs.create({ url: chrome.runtime.getURL('browser-settings.html') });
+  renderBrowserSettings();
+  showPage(els.browserSettingPage);
+}
+
+async function handleSaveBrowserSettings(event) {
+  event.preventDefault();
+
+  const mode = selectedBrowserMode();
+  if (mode !== 'off' && !isWebUrl(state.baseUrl)) {
+    showToast('请先在「扩展设置」中填写站点地址', 'error', 3200);
+    return;
+  }
+
+  setLoading(true);
+  try {
+    await setSync({ browserMode: mode });
+    state.browserMode = mode;
+    showToast(mode === 'off' ? '已关闭浏览器接管' : '浏览器设置已保存', 'success', 1800);
+    showPage(els.mainPage);
+  } catch (err) {
+    showToast('保存失败：' + err.message, 'error', 3200);
+  } finally {
+    setLoading(false);
+  }
 }
 
 function handleToggleToken() {
@@ -527,12 +594,13 @@ async function init() {
   // 1. 读取配置与缓存
   let sync = {};
   let local = {};
-  try { sync = await getSync(['baseUrl', 'token', 'lastOption']); } catch (_) {}
+  try { sync = await getSync(['baseUrl', 'token', 'lastOption', 'browserMode']); } catch (_) {}
   try { local = await getLocal(['options']); } catch (_) {}
 
   state.baseUrl = String(sync.baseUrl || '').trim();
   state.token = String(sync.token || '').trim();
   state.lastCatalog = String(sync.lastOption || '').trim();
+  state.browserMode = sync.browserMode === 'home' || sync.browserMode === 'newtab' ? sync.browserMode : 'off';
 
   // 旧版本分类缓存在 sync，迁移到 local 后清理
   let cachedOptions = Array.isArray(local.options) ? local.options : [];
@@ -557,12 +625,6 @@ async function init() {
     return;
   }
 
-  // 从「浏览器设置」页跳转过来时直接打开扩展设置
-  if (location.hash === '#setting') {
-    handleOpenSetting();
-    return;
-  }
-
   renderCatalog();
   if (!state.catalog.length) loadCatalog();
 }
@@ -571,6 +633,7 @@ async function init() {
 function bindEvents() {
   els.addForm.addEventListener('submit', (e) => { e.preventDefault(); handleConfirmAdd(); });
   els.settingForm.addEventListener('submit', (e) => { e.preventDefault(); handleSaveSetting(); });
+  els.browserSettingForm.addEventListener('submit', handleSaveBrowserSettings);
 
   els.btnAddTool.addEventListener('click', handleAddTool);
   els.btnOpenAdmin.addEventListener('click', handleOpenAdmin);
@@ -582,14 +645,23 @@ function bindEvents() {
 
   els.btnCancelAdd.addEventListener('click', () => showPage(els.mainPage));
   els.btnCancelSetting.addEventListener('click', () => showPage(els.mainPage));
+  els.btnCancelBrowserSetting.addEventListener('click', () => showPage(els.mainPage));
   els.btnTestConn.addEventListener('click', handleTestConn);
   els.btnFetchCatalog.addEventListener('click', () => { applySettingsInputs(); loadCatalog(true); });
   els.btnToggleToken.addEventListener('click', handleToggleToken);
 
+  els.browserModeInputs.forEach((input) => {
+    input.addEventListener('change', markBrowserModeSelected);
+  });
+
   // Esc 返回主页面
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    if (els.confirmPage.classList.contains('active') || els.settingPage.classList.contains('active')) {
+    if (
+      els.confirmPage.classList.contains('active') ||
+      els.settingPage.classList.contains('active') ||
+      els.browserSettingPage.classList.contains('active')
+    ) {
       showPage(els.mainPage);
     }
   });
