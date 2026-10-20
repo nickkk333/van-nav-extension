@@ -74,6 +74,10 @@
         <label for="url">网址<span class="required">*</span>
           <input id="url" name="url" type="text" placeholder="https://example.com" autocomplete="off" inputmode="url" required />
         </label>
+        <label for="internalUrl">内网网址<span class="optional">（可选）</span>
+          <input id="internalUrl" name="internalUrl" type="text" placeholder="http://192.168.1.10:8080，留空表示没有" autocomplete="off" inputmode="url" />
+        </label>
+        <p class="hint">选填：首页点击卡片时优先访问内网网址，检测不通时自动回退到上面的网址。</p>
         <label for="logo">图标<span class="optional">（可选）</span>
           <input id="logo" name="logo" type="text" placeholder="图标地址" autocomplete="off" />
         </label>

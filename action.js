@@ -46,6 +46,7 @@ const els = {
   formCatalog: $('#catelog'),
   formName: $('#name'),
   formUrl: $('#url'),
+  formInternalUrl: $('#internalUrl'),
   formLogo: $('#logo'),
   formDesc: $('#desc'),
   formSort: $('#sort'),
@@ -95,6 +96,13 @@ const isWebUrl = (raw) => /^https?:\/\/.+/i.test(String(raw || ''));
 // 内网地址允许省略协议，默认补全 http://
 const normalizeIntranetUrl = (raw) => {
   const url = String(raw || '').trim().replace(/\/+$/, '');
+  if (!url) return '';
+  return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(url) ? url : `http://${url}`;
+};
+
+// 工具内网网址允许省略协议，默认补全 http://（保留路径与结尾斜杠）
+const normalizeToolInternalUrl = (raw) => {
+  const url = String(raw || '').trim();
   if (!url) return '';
   return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(url) ? url : `http://${url}`;
 };
@@ -337,6 +345,7 @@ function handleAddTool() {
   els.formName.value = tab.title || '';
   els.formDesc.value = tab.title || ''; // 先用标题兜底，随后替换为网页 description
   els.formUrl.value = tab.url || '';
+  els.formInternalUrl.value = ''; // 内网网址选填，默认留空
   els.formLogo.value = tab.favIconUrl || '';
   els.formSort.value = String(DEFAULT_SORT);
   els.formHide1.checked = false;
@@ -360,6 +369,8 @@ async function handleConfirmAdd() {
     catelog: els.formCatalog.value,
     name: els.formName.value.trim(),
     url: normalizeUrl(els.formUrl.value),
+    // 内网网址选填：留空提交空串，表示该工具没有内网地址
+    internalUrl: normalizeToolInternalUrl(els.formInternalUrl.value),
     desc: els.formDesc.value.trim(),
     logo: els.formLogo.value.trim(),
     sort: resolveSort(els.formSort.value),
@@ -367,14 +378,18 @@ async function handleConfirmAdd() {
     default: els.formDefault1.checked,
   };
 
-  // 必填校验（图标除外）
+  // 必填校验（图标与内网网址除外）
   const missing = ['catelog', 'name', 'url', 'desc'].filter((k) => !payload[k]);
   if (missing.length) {
-    showToast('除图标外均为必填项', 'error');
+    showToast('除图标与内网网址外均为必填项', 'error');
     return;
   }
   if (!isWebUrl(payload.url)) {
     showToast('网址格式不正确，需以 http(s):// 开头', 'error');
+    return;
+  }
+  if (payload.internalUrl && !isWebUrl(payload.internalUrl)) {
+    showToast('内网网址格式不正确，需以 http(s):// 开头', 'error');
     return;
   }
 
