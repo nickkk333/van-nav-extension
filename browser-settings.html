@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="options-root">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>浏览器设置 - Van Nav</title>
+  <link rel="stylesheet" href="vendor/pico.min.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body class="options-page">
+  <main class="options-wrap">
+    <header class="options-header">
+      <img class="app-logo" src="images/logo.png" alt="Van Nav Logo" />
+      <div class="options-heading">
+        <h1>浏览器设置</h1>
+        <p>选择浏览器启动页与新标签页的打开方式</p>
+      </div>
+    </header>
+
+    <section class="options-card">
+      <div class="site-row">
+        <span class="site-label">访问站点</span>
+        <a id="siteUrlText" class="site-url">未配置站点地址</a>
+      </div>
+
+      <p id="siteWarning" class="site-warning hidden">
+        尚未配置站点地址，请先在「扩展设置」中填写站点地址与 Token。
+      </p>
+
+      <form id="browserForm" novalidate>
+        <fieldset class="mode-list">
+          <legend>打开方式</legend>
+
+          <label class="mode-card" for="modeHome">
+            <input type="radio" id="modeHome" name="browserMode" value="home" />
+            <span class="mode-text">
+              <strong>主页模式</strong>
+              <small>浏览器启动时打开站点网址。每次打开新标签页时，自动切回已打开的站点标签页，不会保留空白新标签页。</small>
+            </span>
+          </label>
+
+          <label class="mode-card" for="modeNewtab">
+            <input type="radio" id="modeNewtab" name="browserMode" value="newtab" />
+            <span class="mode-text">
+              <strong>新建标签页模式</strong>
+              <small>浏览器启动页与新建标签页均为站点网址，每次打开新标签页都会直接加载站点。</small>
+            </span>
+          </label>
+
+          <label class="mode-card" for="modeOff">
+            <input type="radio" id="modeOff" name="browserMode" value="off" />
+            <span class="mode-text">
+              <strong>关闭</strong>
+              <small>不接管浏览器启动页和新标签页，保持浏览器原有行为。</small>
+            </span>
+          </label>
+        </fieldset>
+
+        <div class="page-actions options-actions">
+          <button id="saveBrowserSetting" type="submit">保存设置</button>
+          <button id="openExtensionSetting" class="secondary outline" type="button">扩展设置</button>
+        </div>
+      </form>
+
+      <p class="hint">说明：受浏览器安全限制，扩展无法直接修改浏览器自带的「启动时」与「主页」设置，因此通过监听启动和新标签页事件实现相同效果。</p>
+    </section>
+  </main>
+
+  <!-- ===== Toast ===== -->
+  <div id="toast" class="toast" role="status" aria-live="polite">
+    <div id="toastContent" class="toast__content"></div>
+  </div>
+
+  <script src="browser-settings.js"></script>
+</body>
+
+</html>

@@ -31,6 +31,7 @@ const els = {
   btnOpenAdmin: $('#openAdmin'),
   btnOpenWebsite: $('#openWebsite'),
   btnOpenSetting: $('#openSetting'),
+  btnOpenBrowserSettings: $('#openBrowserSettings'),
   btnOpenWindow: $('#openWindow'),
   btnCancelAdd: $('#cancelAdd'),
   btnCancelSetting: $('#cancelSetting'),
@@ -477,6 +478,10 @@ function handleOpenWindow() {
   chrome.tabs.create({ url: chrome.runtime.getURL('popup.html') });
 }
 
+function handleOpenBrowserSettings() {
+  chrome.tabs.create({ url: chrome.runtime.getURL('browser-settings.html') });
+}
+
 function handleToggleToken() {
   const show = els.settingToken.type === 'password';
   els.settingToken.type = show ? 'text' : 'password';
@@ -552,6 +557,12 @@ async function init() {
     return;
   }
 
+  // 从「浏览器设置」页跳转过来时直接打开扩展设置
+  if (location.hash === '#setting') {
+    handleOpenSetting();
+    return;
+  }
+
   renderCatalog();
   if (!state.catalog.length) loadCatalog();
 }
@@ -565,6 +576,7 @@ function bindEvents() {
   els.btnOpenAdmin.addEventListener('click', handleOpenAdmin);
   els.btnOpenWebsite.addEventListener('click', handleOpenWebsite);
   els.btnOpenSetting.addEventListener('click', handleOpenSetting);
+  els.btnOpenBrowserSettings.addEventListener('click', handleOpenBrowserSettings);
   els.btnOpenWindow.addEventListener('click', handleOpenWindow);
   els.btnRefresh.addEventListener('click', () => loadCatalog(true));
 
