@@ -692,6 +692,16 @@ async function init() {
   }
 
   renderCatalog();
+
+  // 缓存的内外网状态可能已过期（例如刚切换了网络），打开弹窗时静默刷新一次，
+  // 同时更新缓存供新标签页 / 启动页使用
+  if (state.intranetUrl) {
+    requestNetworkState().then((networkState) => {
+      state.networkState = networkState;
+      renderNetworkStatus();
+    });
+  }
+
   if (!state.catalog.length) loadCatalog();
 }
 

@@ -15,6 +15,8 @@ const INTRANET_KEY = 'intranetUrl';
 const MODE_KEY = 'browserMode';
 const NETWORK_KEY = 'networkState';
 const NETWORK_CHECK_TIMEOUT = 2000;
+// 内外网状态的有效期：超过该时间需重新检测，避免网络环境变化后仍使用旧结果
+const NETWORK_STATE_MAX_AGE = 15000;
 
 // chrome://newtab、edge://newtab、about:newtab 等各浏览器的新标签页地址
 const NEW_TAB_RE =
@@ -126,6 +128,7 @@ async function detectNetworkState() {
 }
 
 let pendingNetworkCheck = null;
+let startupNetworkCheck = null;
 
 function refreshNetworkState(force = false) {
   if (pendingNetworkCheck) {
@@ -146,6 +149,71 @@ function refreshNetworkState(force = false) {
   return pendingNetworkCheck;
 }
 
+// 浏览器刚启动时 Wi-Fi / VPN 可能尚未连接，检测失败时短暂重试，
+// 避免把可用的内网误判为外网并缓存下来。
+function refreshNetworkStateAtStartup() {
+  if (startupNetworkCheck) return startupNetworkCheck;
+
+  startupNetworkCheck = (async () => {
+    const res = await getSync([INTRANET_KEY]);
+    if (!normalizeSiteUrl(res[INTRANET_KEY])) {
+      // 未配置内网地址，无需重试
+      try {
+        return await refreshNetworkState(true);
+      } catch (_) {
+        return 'external';
+      }
+    }
+
+    let state = 'external';
+    for (const delay of [0, 800, 2000]) {
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+      try {
+        state = await refreshNetworkState(true);
+      } catch (_) {
+        state = 'external';
+      }
+      if (state === 'intranet') break;
+    }
+    return state;
+  })().finally(() => {
+    startupNetworkCheck = null;
+  });
+
+  return startupNetworkCheck;
+}
+
+// 获取足够新鲜的内外网状态；缓存过期或尚未检测过时重新检测
+async function ensureFreshNetworkState(maxAge = NETWORK_STATE_MAX_AGE) {
+  // 启动阶段的重试尚未结束：等待它给出最终结果，避免用中途失败的缓存
+  if (startupNetworkCheck) {
+    try {
+      return await startupNetworkCheck;
+    } catch (_) {
+      return 'external';
+    }
+  }
+
+  if (pendingNetworkCheck) {
+    try {
+      return await pendingNetworkCheck;
+    } catch (_) {
+      return 'external';
+    }
+  }
+
+  const local = await getLocal([NETWORK_KEY, 'networkCheckedAt']);
+  const known = local[NETWORK_KEY] === 'intranet' || local[NETWORK_KEY] === 'external';
+  const age = Date.now() - (Number(local.networkCheckedAt) || 0);
+  if (known && age >= 0 && age < maxAge) return local[NETWORK_KEY];
+
+  try {
+    return await refreshNetworkState();
+  } catch (_) {
+    return 'external';
+  }
+}
+
 async function getConfig() {
   const [sync, local] = await Promise.all([
     getSync([SITE_KEY, INTRANET_KEY, MODE_KEY]),
@@ -162,12 +230,30 @@ async function getConfig() {
 }
 
 /* ============================ 标签页操作 ============================ */
-async function findSiteTab(host, excludeTabId, windowId) {
+function siteHosts(urls) {
+  const hosts = [];
+  urls.forEach((url) => {
+    const host = siteHost(url);
+    if (host && !hosts.includes(host)) hosts.push(host);
+  });
+  return hosts;
+}
+
+// hosts 按优先级排列（内网在前）：优先当前窗口、内网地址的站点标签页
+async function findSiteTab(hosts, excludeTabId, windowId) {
+  if (!hosts.length) return null;
   const tabs = await chrome.tabs.query({});
-  const hits = tabs.filter((tab) => tab.id !== excludeTabId && isSiteUrl(tabUrl(tab), host));
+  const matches = (tab) => hosts.some((host) => isSiteUrl(tabUrl(tab), host));
+  const hits = tabs.filter((tab) => tab.id !== excludeTabId && matches(tab));
   if (!hits.length) return null;
-  // 优先当前窗口，其次任意窗口
-  return hits.find((tab) => tab.windowId === windowId) || hits[0];
+
+  const preferredHost = hosts[0];
+  return (
+    hits.find((tab) => tab.windowId === windowId && isSiteUrl(tabUrl(tab), preferredHost)) ||
+    hits.find((tab) => tab.windowId === windowId) ||
+    hits.find((tab) => isSiteUrl(tabUrl(tab), preferredHost)) ||
+    hits[0]
+  );
 }
 
 async function focusTab(tab) {
@@ -188,31 +274,51 @@ async function processNewTab(tab) {
   if (Date.now() - last < 2000) return;
   handledTabs.set(tab.id, Date.now());
 
-  // 浏览器启动时先等待网络检测完成，避免用错内网 / 外网地址
-  const check = pendingNetworkCheck;
-  if (check) {
-    try { await check; } catch (_) {}
-  }
-
-  const { siteUrl, mode, host } = await getConfig();
-  if (!siteUrl || mode === 'off') return;
-
+  let config;
   try {
-    if (mode === 'home') {
-      const target = await findSiteTab(host, tab.id, tab.windowId);
-      if (target) {
-        // 用户可能已在标签页里输入了其它网址，这时不再拦截
-        const current = await chrome.tabs.get(tab.id).catch(() => null);
-        if (!current || !isNewTabUrl(tabUrl(current))) return;
+    config = await getConfig();
+  } catch (_) {
+    return;
+  }
+  if (config.mode === 'off') return;
 
+  // 主页模式：优先切回已打开的站点标签页，内网 / 外网地址都算。
+  // 这样即使本地缓存的内外网状态已过期，也不会错误地新开外网页面。
+  if (config.mode === 'home') {
+    const target = await findSiteTab(
+      siteHosts([config.intranetUrl, config.externalUrl]),
+      tab.id,
+      tab.windowId
+    );
+    if (target) {
+      // 用户可能已在标签页里输入了其它网址，这时不再拦截
+      const current = await chrome.tabs.get(tab.id).catch(() => null);
+      if (!current || !isNewTabUrl(tabUrl(current))) return;
+
+      try {
         await chrome.tabs.remove(tab.id);
         await focusTab(target);
-        return;
-      }
+      } catch (_) {}
+      // 后台刷新状态，供下一次打开新标签页使用
+      void ensureFreshNetworkState().catch(() => {});
+      return;
     }
+  }
 
+  // 需要在该标签页打开站点：打开前必须确保内外网判断是最新的。
+  // onStartup 与 onCreated 的触发顺序没有保证；浏览器启动时的检测也可能
+  // 早于网络就绪（Wi-Fi / VPN 尚未连接），直接使用缓存会误用外网地址。
+  await ensureFreshNetworkState();
+  config = await getConfig();
+  if (!config.siteUrl || config.mode === 'off') return;
+
+  // 检测期间用户可能已在该标签页输入了其它网址，这时不再拦截
+  const current = await chrome.tabs.get(tab.id).catch(() => null);
+  if (!current || !isNewTabUrl(tabUrl(current))) return;
+
+  try {
     // 新建标签页模式，或主页模式下尚未打开站点：在当前标签页打开站点
-    await chrome.tabs.update(tab.id, { url: siteUrl });
+    await chrome.tabs.update(tab.id, { url: config.siteUrl });
   } catch (_) {
     // 标签页可能已被用户关闭，忽略即可
   }
@@ -220,13 +326,23 @@ async function processNewTab(tab) {
 
 // 浏览器启动时确保站点已打开（等效于「启动页为站点网址」）
 async function ensureStartupSite() {
-  const { siteUrl, mode, host } = await getConfig();
+  await ensureFreshNetworkState();
+  const { siteUrl, mode, host, externalUrl } = await getConfig();
   if (!siteUrl || mode === 'off') return;
 
+  const hosts = siteHosts([host, siteHost(externalUrl)]);
   const tabs = await chrome.tabs.query({});
-  const hasSiteTab = tabs.some((tab) => isSiteUrl(tabUrl(tab), host));
-  const hasNewTab = tabs.some((tab) => isNewTabUrl(tabUrl(tab)));
-  if (hasSiteTab || hasNewTab) return; // 新标签页会被 onCreated 接管
+  const hasSiteTab = tabs.some((tab) => hosts.some((h) => isSiteUrl(tabUrl(tab), h)));
+  if (hasSiteTab) return;
+
+  // 会话恢复出来的新标签页可能不会触发 onCreated，这里补处理
+  const newTabs = tabs.filter((tab) => isNewTabUrl(tabUrl(tab)));
+  if (newTabs.length) {
+    for (const tab of newTabs) {
+      await processNewTab(tab);
+    }
+    return;
+  }
 
   try {
     await chrome.tabs.create({ url: siteUrl, active: true });
@@ -248,13 +364,20 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 chrome.runtime.onStartup.addListener(() => {
   void (async () => {
     try {
-      await refreshNetworkState();
+      await refreshNetworkStateAtStartup();
     } catch (_) {}
 
     // 等浏览器恢复会话 / 打开启动页后再确保站点已打开
     await new Promise((resolve) => setTimeout(resolve, 1200));
-    await ensureStartupSite();
+    try {
+      await ensureStartupSite();
+    } catch (_) {}
   })();
+});
+
+// Wi-Fi / VPN 重新连接后立即刷新内外网状态，避免后续新标签页继续使用旧的外网地址
+self.addEventListener('online', () => {
+  void refreshNetworkState(true);
 });
 
 chrome.runtime.onInstalled.addListener(() => {
